@@ -7,7 +7,6 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Configuration;
 using System.Collections;
-//using System.Collections.Generic.Dictionary;
 
 namespace BulkUpload
 {
@@ -17,7 +16,8 @@ namespace BulkUpload
 		
         static log4net.ILog log = log4net.LogManager.GetLogger("FileLogger");// log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 		static log4net.ILog report = log4net.LogManager.GetLogger("ReportLogger");
-	    public static string Hostname;
+        public static Properties properties;
+        public static string Hostname;
         public static string Username;
         public static string Password;
         public static string BaseDN;
@@ -26,32 +26,56 @@ namespace BulkUpload
 		public static ArrayList statusList;
 
 
-		static void Main(string[] args)
+        static void Main(string[] args)
         {
             reportMap = new Dictionary<Person, List<string>>();
-			statusList = new ArrayList();
-
-			Hostname = System.Configuration.ConfigurationManager.ConnectionStrings["Hostname"].ConnectionString;
-			Username = System.Configuration.ConfigurationManager.ConnectionStrings["Username"].ConnectionString;
-			Password = System.Configuration.ConfigurationManager.ConnectionStrings["Password"].ConnectionString;
-			TopDN = System.Configuration.ConfigurationManager.ConnectionStrings["TopDN"].ConnectionString;
-			BaseDN = System.Configuration.ConfigurationManager.ConnectionStrings["BaseDN"].ConnectionString;
-            
-            using (var fs = File.OpenRead(@"C:\log\test.csv"))
-            using (var reader = new StreamReader(fs))
+            statusList = new ArrayList();
+            try
             {
-                personList = new List<Person>();
-                while (!reader.EndOfStream)
+                properties = new Properties("C:\\BulkUpload\\config.properties");
+                if (properties != null)
                 {
-                    string line = reader.ReadLine();
-                    if(!line.StartsWith("firstName,"))
-                    {
-                        string[] values = line.Split(',');
-                        personList.Add(Utility.createPerson(values));
-                    }
+                    Hostname = properties.get("Hostname");
+                    Username = properties.get("Username");
+                    Password = properties.get("Password");
+                    BaseDN = properties.get("BaseDN");
+                    TopDN = properties.get("TopDN");
+                }
+                if ((Hostname==null || Hostname=="") || (Username == null || Username == "") || (Password == null || Password == "")
+                    || (BaseDN == null || BaseDN == "") || (TopDN == null || TopDN == ""))
+                {
+                    Console.Write("\nOne or more entries not found in properties file");
+                    Console.ReadKey();
                 }
             }
-            createPersonEntries();
+            catch (Exception e) {
+                log.Error("Exception occurred while reading from properties file: "+e.StackTrace);
+                Console.Write("\n"+e.StackTrace);
+                Console.ReadKey();
+            }
+            try
+            {
+                using (var fs = File.OpenRead(@"C:\BulkUpload\upload.csv"))
+                using (var reader = new StreamReader(fs))
+                {
+                    personList = new List<Person>();
+                    while (!reader.EndOfStream)
+                    {
+                        string line = reader.ReadLine();
+                        if (!line.StartsWith("firstName,"))
+                        {
+                            string[] values = line.Split(',');
+                            personList.Add(Utility.createPerson(values));
+                        }
+                    }
+                }
+                createPersonEntries();
+            }catch(Exception e)
+            {
+                log.Error("Exception occurred while reading from upload.csv file: " + e.StackTrace);
+                Console.Write("\n"+e.Message);
+                Console.ReadKey();
+            }
         }
 
         static void createPersonEntries()
@@ -81,6 +105,8 @@ namespace BulkUpload
             {
                 CreateGroupAttributes(person);
             }
+            Console.Write("\nBulk Upload is complete.\nPlease check report in logs: C:/BulkUpload/logs/CreateUserReport.log");
+            Console.ReadKey();
 		}
 
         private static void CreateScalarAttributes(Person person)
@@ -97,7 +123,7 @@ namespace BulkUpload
             usersEntry.Properties["physicalDeliveryOfficeName"].Value = person.office;
             usersEntry.Properties["streetAddress"].Value = person.street;
             usersEntry.Properties["l"].Value = person.city;
-            usersEntry.Properties["postOfficeBox"].Value = person.poBox;
+         //   usersEntry.Properties["postOfficeBox"].Value = person.poBox;
             usersEntry.Properties["title"].Value = person.jobTitle;
             usersEntry.Properties["company"].Value = person.company;
 			usersEntry.Properties["postalCode"].Value = person.zipCode;
@@ -116,7 +142,7 @@ namespace BulkUpload
             usersEntry.Properties["employeeType"].Value = person.empType;
             usersEntry.Properties["employeeNumber"].Value = person.empNumber;
 
-            if (person.expiryDate != null)
+            if (person.expiryDate != null && person.expiryDate!="")
             {
                 DateTime Expirationdate = DateTime.ParseExact(person.expiryDate, "dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture);
                 usersEntry.Properties["accountExpires"].Value = Convert.ToString((Int64)Expirationdate.ToFileTime());
@@ -142,7 +168,7 @@ namespace BulkUpload
             List<string> messages = new List<string>();
 
             string path = "LDAP://" + Hostname + "/" + "CN=" + person.firstName + "," + BaseDN;
-            Console.WriteLine(path);
+            Console.Write("\n"+path);
 
             DirectoryEntry usersEntry = new DirectoryEntry(path, Username, Password);
 
@@ -291,7 +317,7 @@ namespace BulkUpload
             }
             catch (Exception e)
             {
-                log.Error("Exception occured while assigning direct reports attribute to user " + e.StackTrace);
+                log.Error("Exception occurred while assigning direct reports attribute to user " + e.StackTrace);
             }
         }
 
@@ -339,7 +365,7 @@ namespace BulkUpload
             }
             catch (Exception e)
             {
-                log.Error("Exception occured while assigning MemberOf attribute to user " + e.StackTrace);
+                log.Error("Exception occurred while assigning MemberOf attribute to user " + e.StackTrace);
             }
         }
 
@@ -374,7 +400,8 @@ namespace BulkUpload
             catch (Exception e)
             {
                 log.Error("Exception in Establish Connection to AD '" + Hostname + "' with username '" + Username + "'");
-                return null;
+                Console.Write("\nError in establish connection: "+e.Message);
+                throw new Exception();
             }
         }
 
